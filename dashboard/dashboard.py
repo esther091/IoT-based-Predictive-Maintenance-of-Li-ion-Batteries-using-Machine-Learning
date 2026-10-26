@@ -10,7 +10,7 @@ import requests
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import time
 
@@ -20,6 +20,10 @@ import time
 # deployed backend, e.g. https://<name>.onrender.com
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 REFRESH_INTERVAL = 5
+# Times are shown in Nigerian time (WAT = UTC+1, no daylight saving). The backend stores UTC,
+# and the Render server clock runs on UTC, so the offset is fixed here rather than taken
+# from the server. Set UTC_OFFSET_HOURS to show another zone.
+LOCAL_TZ = timezone(timedelta(hours=float(os.environ.get("UTC_OFFSET_HOURS", "1"))))
 
 st.set_page_config(
     page_title="Battery Health Monitor",
@@ -298,7 +302,7 @@ def main():
     elif prediction:
         alert = prediction.get("alert_level", "NORMAL")
         rul = prediction.get("rul_final", 0) or 0
-        replace_by = (datetime.now() + timedelta(days=rul)).strftime("%d %b %Y")
+        replace_by = (datetime.now(LOCAL_TZ) + timedelta(days=rul)).strftime("%d %b %Y")
 
         banners = {
             "URGENT":   ("alert-urgent", f"🚨 URGENT — Replace battery now. {rul:.0f} days remaining."),
@@ -340,7 +344,7 @@ def main():
             st.markdown('<div class="panel-title">⏳ Remaining Useful Life</div>', unsafe_allow_html=True)
             if has_pred:
                 rul = prediction.get("rul_final", 0) or 0
-                replace_by = (datetime.now() + timedelta(days=rul)).strftime("%d %b %Y")
+                replace_by = (datetime.now(LOCAL_TZ) + timedelta(days=rul)).strftime("%d %b %Y")
                 st.markdown(f"""
                     <div style="text-align:center; padding-top: 18px;">
                         <div style="font-size: 2.6rem; font-weight: 800; color: #0F2A47;">{rul:.0f}</div>
@@ -384,9 +388,9 @@ def main():
     # ---- Time series charts ----
     if history:
         df = pd.DataFrame(history)
-        # the backend stores UTC; show the laptop's local time (e.g. Nigeria = UTC+1)
+        # the backend stores UTC; show Nigerian time (LOCAL_TZ)
         df["timestamp"] = (pd.to_datetime(df["timestamp"]).dt.tz_localize("UTC")
-                           .dt.tz_convert(datetime.now().astimezone().tzinfo).dt.tz_localize(None))
+                           .dt.tz_convert(LOCAL_TZ).dt.tz_localize(None))
 
         ch1, ch2 = st.columns(2)
         with ch1:
@@ -418,7 +422,7 @@ def main():
     else:
         st.info("No readings yet. Waiting for ESP32 data...")
 
-    st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')} · Auto-refreshes every {REFRESH_INTERVAL}s")
+    st.caption(f"Last updated: {datetime.now(LOCAL_TZ).strftime('%H:%M:%S')} · Auto-refreshes every {REFRESH_INTERVAL}s")
 
     time.sleep(REFRESH_INTERVAL)
     st.rerun()
